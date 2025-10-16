@@ -2,17 +2,50 @@
 
 ## Quick Answer
 
-**Q: Why can't I test the `icon` property using `getAttribute('icon')`?**
+**Q: Why does my test fail with `Property 'icon' does not exist on type 'HTMLElement'`?**
 
-**A:** The `icon` property is not reflected to a DOM attribute for performance reasons. Test it using the property directly instead:
+**A:** You need to cast the element to the correct type in TypeScript. Also, icons are SVG data URLs, not string identifiers.
+
+### ❌ Failing Test
 
 ```tsx
-// ❌ Won't work
-expect(button.getAttribute('icon')).toBe('check');
+import { IxButton } from '@siemens/ix-react';
+import { iconStar } from '@siemens/ix-icons/icons';
+import { render, screen } from '@testing-library/react';
 
-// ✅ Works
-expect(button.icon).toBe('check');
+test('button icon', () => {
+  render(<IxButton icon={iconStar} data-testid="btn" />);
+  const button = screen.getByTestId('btn');
+  expect(button.icon).toBe('star'); // ❌ Two errors!
+  // 1. Property 'icon' does not exist on type 'HTMLElement'
+  // 2. Icon value is not 'star', it's a data URL
+});
 ```
+
+### ✅ Fixed Test
+
+```tsx
+import { IxButton } from '@siemens/ix-react';
+import { iconStar } from '@siemens/ix-icons/icons';
+import { render, screen } from '@testing-library/react';
+import type { HTMLIxButtonElement } from '@siemens/ix';
+
+test('button icon', () => {
+  render(<IxButton icon={iconStar} data-testid="btn" />);
+
+  // Cast to the correct type
+  const button = screen.getByTestId('btn') as HTMLIxButtonElement;
+
+  // Compare against the imported icon constant
+  expect(button.icon).toBe(iconStar); // ✅ Works!
+});
+```
+
+### Key Points
+
+1. **TypeScript Type Casting:** `as HTMLIxButtonElement`
+2. **Icons are Data URLs:** Compare against imported constants, not strings
+3. **Non-Reflected Property:** Use `.icon` property, not `getAttribute('icon')`
 
 ---
 
@@ -43,12 +76,12 @@ expect(button.icon).toBe('check');
 const button = document.querySelector('ix-button');
 
 // Both work as properties
-console.log(button.disabled);  // true
-console.log(button.icon);      // 'check'
+console.log(button.disabled); // true
+console.log(button.icon); // 'check'
 
 // Only reflected properties work as attributes
-console.log(button.getAttribute('disabled'));  // 'true'
-console.log(button.getAttribute('icon'));      // null ❌
+console.log(button.getAttribute('disabled')); // 'true'
+console.log(button.getAttribute('icon')); // null ❌
 ```
 
 ---
@@ -59,17 +92,23 @@ console.log(button.getAttribute('icon'));      // null ❌
 
 ```tsx
 import { render, screen } from '@testing-library/dom';
+import { iconCheck } from '@siemens/ix-icons/icons';
 
 test('button has correct icon', () => {
-  document.body.innerHTML = '<ix-button icon="check">Save</ix-button>';
-  
-  const button = screen.getByRole('button');
-  
-  // Option 1: Direct property
-  expect(button.icon).toBe('check');
-  
+  const button = document.createElement('ix-button');
+  button.icon = iconCheck;
+  button.textContent = 'Save';
+  document.body.appendChild(button);
+
+  // Option 1: Direct property comparison
+  expect(button.icon).toBe(iconCheck);
+
   // Option 2: toHaveProperty matcher
-  expect(button).toHaveProperty('icon', 'check');
+  expect(button).toHaveProperty('icon', iconCheck);
+
+  // Option 3: Just verify icon is set
+  expect(button.icon).toBeTruthy();
+  expect(button.icon).toContain('data:image/svg+xml');
 });
 ```
 
@@ -80,16 +119,36 @@ test('button has correct icon', () => {
 ```tsx
 import { render, screen } from '@testing-library/react';
 import { IxButton } from '@siemens/ix-react';
+import { iconStar } from '@siemens/ix-icons/icons';
+import type { HTMLIxButtonElement } from '@siemens/ix';
 
 test('button has correct icon', () => {
-  render(<IxButton icon="check">Save</IxButton>);
-  
-  const button = screen.getByRole('button');
-  
-  // Access the underlying web component element
-  expect(button).toHaveProperty('icon', 'check');
+  render(
+    <IxButton icon={iconStar} data-testid="my-button">
+      Save
+    </IxButton>
+  );
+
+  // TypeScript: Cast to the correct element type
+  const button = screen.getByTestId('my-button') as HTMLIxButtonElement;
+
+  // ⚠️ Icons from @siemens/ix-icons are SVG data URLs, not strings!
+  // Option 1: Compare against the imported icon constant
+  expect(button.icon).toBe(iconStar);
+
+  // Option 2: Just verify the icon property is set
+  expect(button.icon).toBeTruthy();
+  expect(button.icon).toContain('data:image/svg+xml');
+
+  // Option 3: Verify the icon property is accessible (simplest)
+  expect(button).toHaveProperty('icon', iconCheck);
 });
 ```
+
+**Important:**
+
+- Icons imported from `@siemens/ix-icons/icons` are SVG data URLs (e.g., `"data:image/svg+xml;utf8,..."`), not string identifiers like `"star"`. Always compare against the imported constant.
+- **TypeScript**: Cast to `HTMLIxButtonElement` to access the `icon` property: `as HTMLIxButtonElement`
 
 ---
 
@@ -101,11 +160,11 @@ import { IxButtonModule } from '@siemens/ix-angular';
 
 describe('ButtonComponent', () => {
   let fixture: ComponentFixture<TestComponent>;
-  
+
   it('should have correct icon', () => {
     const compiled = fixture.nativeElement;
     const button = compiled.querySelector('ix-button');
-    
+
     // Access property directly
     expect(button.icon).toBe('check');
   });
@@ -122,9 +181,9 @@ import { IxButton } from '@siemens/ix-vue';
 
 test('button has correct icon', () => {
   const { container } = render(IxButton, {
-    props: { icon: 'check' }
+    props: { icon: 'check' },
   });
-  
+
   const button = container.querySelector('ix-button');
   expect(button.icon).toBe('check');
 });
@@ -136,19 +195,20 @@ test('button has correct icon', () => {
 
 ```typescript
 import { test, expect } from '@playwright/test';
+import { iconCheck } from '@siemens/ix-icons/icons';
 
 test('button has correct icon', async ({ page }) => {
   await page.goto('/your-page');
-  
+
   const button = page.locator('ix-button');
-  
+
   // Evaluate property in browser context
   const icon = await button.evaluate((el: HTMLIxButtonElement) => el.icon);
-  expect(icon).toBe('check');
-  
-  // Or use handle
-  const iconProperty = await button.evaluateHandle(el => el.icon);
-  expect(await iconProperty.jsonValue()).toBe('check');
+  expect(icon).toBe(iconCheck); // Compare against constant
+
+  // Or just verify it's set
+  expect(icon).toBeTruthy();
+  expect(icon).toContain('data:image/svg+xml');
 });
 ```
 
@@ -157,13 +217,16 @@ test('button has correct icon', async ({ page }) => {
 ### 6. **Cypress**
 
 ```typescript
+import { iconCheck } from '@siemens/ix-icons/icons';
+
 describe('Button Component', () => {
   it('should have correct icon', () => {
     cy.visit('/your-page');
-    
-    cy.get('ix-button').then($button => {
+
+    cy.get('ix-button').then(($button) => {
       // Access property via jQuery element
-      expect($button[0].icon).to.equal('check');
+      const button = $button[0] as HTMLIxButtonElement;
+      expect(button.icon).to.equal(iconCheck);
     });
   });
 });
@@ -173,23 +236,49 @@ describe('Button Component', () => {
 
 ## Visual Testing via Shadow DOM
 
-You can also test by accessing the rendered icon element:
+⚠️ **Warning:** Testing shadow DOM internals is **NOT RECOMMENDED**. It couples your tests to implementation details that can change between versions.
+
+### Why You Shouldn't Test Shadow DOM
+
+1. **Internal structure may change** - Component internals are not part of the public API
+2. **Selectors are fragile** - What works today may break tomorrow
+3. **No benefit** - Testing the property is simpler and more reliable
+
+### The Right Approach
 
 ```tsx
-test('icon is rendered in button', () => {
-  const button = screen.getByRole('button');
-  
-  // Access shadow DOM
-  const shadowRoot = button.shadowRoot;
-  const iconElement = shadowRoot.querySelector('ix-icon');
-  
-  // Verify icon exists
-  expect(iconElement).toBeInTheDocument();
-  
-  // Verify icon name (if ix-icon exposes it)
-  expect(iconElement).toHaveAttribute('name', 'check');
+import type { HTMLIxButtonElement } from '@siemens/ix';
+import { iconCheck } from '@siemens/ix-icons/icons';
+
+test('button has icon', () => {
+  const button = screen.getByRole('button') as HTMLIxButtonElement;
+
+  // ✅ Test the public API (property)
+  expect(button.icon).toBe(iconCheck);
+
+  // ❌ Don't test shadow DOM internals
+  // const shadowRoot = button.shadowRoot;
+  // const iconElement = shadowRoot?.querySelector('.some-internal-class');
+  // This breaks when internal structure changes!
 });
 ```
+
+### If You Really Must Test Shadow DOM
+
+Only do this for **visual regression testing** or **integration tests**, never for unit tests:
+
+```tsx
+test('button renders without crashing', () => {
+  const button = screen.getByRole('button') as HTMLIxButtonElement;
+
+  // Just verify shadow DOM exists
+  expect(button.shadowRoot).toBeTruthy();
+
+  // Don't query internal elements - they're implementation details
+});
+```
+
+**Recommendation:** Use property testing (Options 1 & 2) instead. Test the component's public API, not its internals.
 
 ---
 
@@ -232,16 +321,25 @@ loading, hideText
 ### Scenario 1: Testing Button Icon
 
 ```tsx
-// ❌ This fails
+import { iconCheck } from '@siemens/ix-icons/icons';
+import type { HTMLIxButtonElement } from '@siemens/ix';
+
+// ❌ This fails - can't select by icon attribute
 test('button icon attribute', () => {
-  const button = document.querySelector('ix-button[icon="check"]');
-  expect(button).toBeInTheDocument();  // Selector won't find it!
+  const button = document.querySelector('ix-button[icon]');
+  expect(button).toBeInTheDocument(); // Selector won't find it!
 });
 
-// ✅ This works
+// ✅ This works - test the property
 test('button icon property', () => {
-  const button = document.querySelector('ix-button');
-  expect(button.icon).toBe('check');
+  const button = document.querySelector('ix-button') as HTMLIxButtonElement;
+
+  // Compare against the imported icon constant
+  expect(button.icon).toBe(iconCheck);
+
+  // Or just verify an icon is set
+  expect(button.icon).toBeTruthy();
+  expect(button.icon).toContain('data:image/svg+xml');
 });
 ```
 
@@ -250,10 +348,14 @@ test('button icon property', () => {
 ### Scenario 2: Testing Variant
 
 ```tsx
+import type { HTMLIxButtonElement } from '@siemens/ix';
+
 // ❌ This fails
+const button = document.querySelector('ix-button') as HTMLIxButtonElement;
 expect(button.getAttribute('variant')).toBe('primary');
 
 // ✅ This works
+const button = document.querySelector('ix-button') as HTMLIxButtonElement;
 expect(button.variant).toBe('primary');
 ```
 
@@ -262,10 +364,14 @@ expect(button.variant).toBe('primary');
 ### Scenario 3: Testing Loading State
 
 ```tsx
+import type { HTMLIxButtonElement } from '@siemens/ix';
+
 // ❌ This fails
+const button = document.querySelector('ix-button') as HTMLIxButtonElement;
 expect(button.getAttribute('loading')).toBe('true');
 
 // ✅ This works
+const button = document.querySelector('ix-button') as HTMLIxButtonElement;
 expect(button.loading).toBe(true);
 ```
 
@@ -274,29 +380,57 @@ expect(button.loading).toBe(true);
 ### Scenario 4: Testing Disabled State (Reflected!)
 
 ```tsx
+import type { HTMLIxButtonElement } from '@siemens/ix';
+
 // ✅ Both work (disabled IS reflected)
+const button = document.querySelector('ix-button') as HTMLIxButtonElement;
 expect(button.getAttribute('disabled')).toBe('true');
 expect(button.disabled).toBe(true);
 
 // CSS selector also works
-const disabledButton = document.querySelector('ix-button[disabled]');
+const disabledButton = document.querySelector('ix-button[disabled]') as HTMLIxButtonElement;
 ```
 
 ---
 
 ## TypeScript Support
 
-If using TypeScript, make sure to import the types:
+**Always cast to the correct element type** to access component properties:
 
 ```typescript
-import { HTMLIxButtonElement } from '@siemens/ix';
+import type { HTMLIxButtonElement } from '@siemens/ix';
+import { iconCheck } from '@siemens/ix-icons/icons';
 
+// ✅ Cast the element to the correct type
 const button = document.querySelector('ix-button') as HTMLIxButtonElement;
 
-// TypeScript knows about all properties
-expect(button.icon).toBe('check');        // ✅ Type-safe
-expect(button.variant).toBe('primary');   // ✅ Type-safe
-expect(button.disabled).toBe(false);      // ✅ Type-safe
+// Now TypeScript knows about all properties
+expect(button.icon).toBe(iconCheck); // ✅ Type-safe
+expect(button.variant).toBe('primary'); // ✅ Type-safe
+expect(button.disabled).toBe(false); // ✅ Type-safe
+```
+
+**For React Testing Library:**
+
+```typescript
+import { render, screen } from '@testing-library/react';
+import type { HTMLIxButtonElement } from '@siemens/ix';
+import { iconStar } from '@siemens/ix-icons/icons';
+
+const button = screen.getByTestId('my-button') as HTMLIxButtonElement;
+expect(button.icon).toBe(iconStar);
+```
+
+**Without the type cast, you'll get TypeScript errors:**
+
+```typescript
+// ❌ TypeScript Error: Property 'icon' does not exist on type 'HTMLElement'
+const button = screen.getByTestId('my-button');
+expect(button.icon).toBe(iconStar); // Error!
+
+// ✅ Fixed with type cast
+const button = screen.getByTestId('my-button') as HTMLIxButtonElement;
+expect(button.icon).toBe(iconStar); // Works!
 ```
 
 ---
@@ -307,10 +441,7 @@ Create helper functions for common tests:
 
 ```typescript
 // test-utils.ts
-export function getIxButtonProperty<K extends keyof HTMLIxButtonElement>(
-  button: HTMLIxButtonElement,
-  property: K
-): HTMLIxButtonElement[K] {
+export function getIxButtonProperty<K extends keyof HTMLIxButtonElement>(button: HTMLIxButtonElement, property: K): HTMLIxButtonElement[K] {
   return button[property];
 }
 
@@ -327,11 +458,10 @@ expect.extend({
   toHaveIconProperty(received: Element, expected: string) {
     const actual = (received as any).icon;
     const pass = actual === expected;
-    
+
     return {
       pass,
-      message: () => 
-        `Expected icon to be ${expected}, but got ${actual}`,
+      message: () => `Expected icon to be ${expected}, but got ${actual}`,
     };
   },
 });
@@ -347,18 +477,24 @@ expect(button).toHaveIconProperty('check');
 ### Check if Property Exists
 
 ```tsx
-const button = document.querySelector('ix-button');
+import type { HTMLIxButtonElement } from '@siemens/ix';
+import { iconCheck } from '@siemens/ix-icons/icons';
 
-console.log('icon' in button);              // true
-console.log(button.hasAttribute('icon'));   // false
-console.log(button.icon);                   // 'check'
-console.log(button.getAttribute('icon'));   // null
+const button = document.querySelector('ix-button') as HTMLIxButtonElement;
+
+console.log('icon' in button); // true
+console.log(button.hasAttribute('icon')); // false
+console.log(button.icon); // "data:image/svg+xml;utf8,<?xml..."
+console.log(button.icon === iconCheck); // true
+console.log(button.getAttribute('icon')); // null
 ```
 
 ### List All Properties
 
 ```typescript
-const button = document.querySelector('ix-button');
+import type { HTMLIxButtonElement } from '@siemens/ix';
+
+const button = document.querySelector('ix-button') as HTMLIxButtonElement;
 
 // Log all enumerable properties
 console.log(Object.keys(button));
@@ -380,24 +516,33 @@ See [REFLECT_PHILOSOPHY.md](./REFLECT_PHILOSOPHY.md) for the full explanation.
 ### Quick Checklist
 
 ✅ **DO:**
+
+- **Cast to correct type in TypeScript:** `as HTMLIxButtonElement`
 - Test properties directly: `button.icon`
-- Use `.toHaveProperty()` matcher
+- Use `.toHaveProperty()` matcher with correct values
+- Compare icons against imported constants, not strings
 - Access via shadow DOM for visual tests
 - Check documentation for which properties are reflected
 
 ❌ **DON'T:**
+
 - Test non-reflected properties via `getAttribute()`
 - Assume all properties are attributes
 - Try to use CSS attribute selectors on non-reflected properties
+- Compare icon properties to strings like `'star'` (they are SVG data URLs!)
 
 ### When in Doubt
 
 ```typescript
-// This ALWAYS works for any property
-expect(element.propertyName).toBe(expectedValue);
+import type { HTMLIxButtonElement } from '@siemens/ix';
+import { iconCheck } from '@siemens/ix-icons/icons';
 
-// This ONLY works for reflected properties
-expect(element.getAttribute('property-name')).toBe(expectedValue);
+// ✅ This ALWAYS works for any property (with proper type cast)
+const button = element as HTMLIxButtonElement;
+expect(button.icon).toBe(iconCheck);
+
+// ❌ This ONLY works for reflected properties
+expect(element.getAttribute('icon')).toBe(iconCheck); // Won't work!
 ```
 
 ---
